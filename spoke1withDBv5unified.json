@@ -5,7 +5,7 @@
     "region": { "type": "string", "defaultValue": "canadacentral" },
     "vnetName": { "type": "string", "defaultValue": "vnet-spoke-1" },
     "subnetName": { "type": "string", "defaultValue": "webAppSubnet" },
-    "sqlServerName": { "type": "string", "defaultValue": "sql-spoke-1" },
+    "sqlServerName": { "type": "string", "defaultValue": "[concat('sql-spoke1', uniqueString(resourceGroup().id))]" },
     "sqlDatabaseName": { "type": "string", "defaultValue": "TestDB" },
     "webAppName": {
       "type": "string",
