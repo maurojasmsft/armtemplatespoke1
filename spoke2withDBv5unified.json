@@ -1,0 +1,148 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+    "parameters": {
+    "region": { "type": "string", "defaultValue": "canadacentral" },
+    "vnetName": { "type": "string", "defaultValue": "vnet-spoke-2" },
+    "subnetName": { "type": "string", "defaultValue": "webAppSubnet" },
+    "sqlServerName": { "type": "string", "defaultValue": "[concat('sql-spoke-2', uniqueString(resourceGroup().id))]" },
+    "sqlDatabaseName": { "type": "string", "defaultValue": "TestDB" },
+    "webAppName": {
+      "type": "string",
+      "defaultValue": "[concat('webapp-spoke-2-', uniqueString(resourceGroup().id))]"
+    },
+    "appServicePlanName": { "type": "string", "defaultValue": "AppServicePlan-spoke-2" },
+    "sqlServerAdminUsername": { "type": "string", "defaultValue": "TestAppServiceAdmin" },
+    "sqlServerAdminPassword": {
+      "type": "securestring",
+      "defaultValue": "P@$$w0rd123456"
+    },
+      "storageAccountName": {
+      "type": "string",
+      "defaultValue": "[concat('stor', uniqueString(resourceGroup().id, 'storage'))]"
+    },
+    "blobContainerName": { "type": "string", "defaultValue": "appzipcontainer" }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-05-01",
+      "name": "[parameters('storageAccountName')]",
+      "location": "[parameters('region')]",
+      "sku": { "name": "Standard_LRS", "tier": "Standard" },
+      "kind": "StorageV2",
+      "properties": {
+        "defaultToOAuthAuthentication": true,
+        "allowCrossTenantReplication": false,
+        "minimumTlsVersion": "TLS1_2",
+        "allowBlobPublicAccess": false,
+        "networkAcls": {
+          "bypass": "AzureServices",
+          "virtualNetworkRules": [],
+          "ipRules": [],
+          "defaultAction": "Allow"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+      "apiVersion": "2023-05-01",
+      "name": "[concat(parameters('storageAccountName'), '/default/', parameters('blobContainerName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', parameters('storageAccountName'))]"
+      ],
+      "properties": { "publicAccess": "None" }
+    },
+    {
+      "type": "Microsoft.Sql/servers",
+      "apiVersion": "2023-05-01-preview",
+      "name": "[parameters('sqlServerName')]",
+      "location": "[parameters('region')]",
+      "kind": "v12.0",
+      "properties": {
+        "administratorLogin": "[parameters('sqlServerAdminUsername')]",
+        "administratorLoginPassword": "[parameters('sqlServerAdminPassword')]",
+        "version": "12.0",
+        "minimalTlsVersion": "1.2",
+        "publicNetworkAccess": "Disabled"
+      }
+    },
+    {
+      "type": "Microsoft.Sql/servers/databases",
+      "apiVersion": "2023-05-01-preview",
+      "name": "[concat(parameters('sqlServerName'), '/', parameters('sqlDatabaseName'))]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Sql/servers', parameters('sqlServerName'))]"
+      ],
+      "location": "[parameters('region')]",
+      "properties": {
+        "collation": "SQL_Latin1_General_CP1_CI_AS",
+        "maxSizeBytes": 2147483648,
+        "sku": {
+          "name": "S1",
+          "tier": "Standard",
+          "capacity": 1,
+          "family": "Gen5"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2023-05-01",
+      "name": "[parameters('vnetName')]",
+      "location": "[parameters('region')]",
+      "properties": {
+        "addressSpace": { "addressPrefixes": [ "192.168.0.0/16" ] },
+        "subnets": [
+          {
+            "name": "[parameters('subnetName')]",
+            "properties": { "addressPrefix": "192.168.1.0/24" }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Web/serverfarms",
+      "apiVersion": "2023-12-01",
+      "name": "[parameters('appServicePlanName')]",
+      "location": "[parameters('region')]",
+      "sku": {
+        "name": "P1V2",
+        "tier": "PremiumV2",
+        "size": "P1V2",
+        "family": "P",
+        "capacity": 1
+      },
+      "properties": { "reserved": true }
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2023-12-01",
+      "name": "[parameters('webAppName')]",
+      "location": "[parameters('region')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/serverfarms', parameters('appServicePlanName'))]",
+        "[resourceId('Microsoft.Network/virtualNetworks', parameters('vnetName'))]",
+        "[resourceId('Microsoft.Sql/servers', parameters('sqlServerName'))]"
+      ],
+      "properties": {
+        "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', parameters('appServicePlanName'))]",
+        "siteConfig": {
+          "appSettings": [
+            { "name": "FUNCTIONS_WORKER_RUNTIME", "value": "dotnet" },
+            { "name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "14.0" }
+          ]
+        },
+        "vnetIntegration": {
+          "subnetId": "[resourceId('Microsoft.Network/virtualNetworks/subnets', parameters('vnetName'), parameters('subnetName'))]"
+        },
+        "deployment": {
+          "type": "Zip",
+          "properties": {
+            "source": "[concat('https://', parameters('storageAccountName'), '.blob.core.windows.net/', parameters('blobContainerName'), '/app.zip')]"
+          }
+        }
+      }
+    }
+  ]
+}
